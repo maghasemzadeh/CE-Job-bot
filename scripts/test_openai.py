@@ -7,7 +7,7 @@ Usage: python scripts/test_openai.py
 import sys
 import os
 from pathlib import Path
-from ..app.config import Settings
+from app.config import Settings
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
