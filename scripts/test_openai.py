@@ -7,6 +7,7 @@ Usage: python scripts/test_openai.py
 import sys
 import os
 from pathlib import Path
+from ..app.config import Settings
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -31,7 +32,7 @@ def test_openai_connection():
         log.info("Loading environment variables from system...")
     
     # Check if API key is available
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = Settings.OPENAI_API_KEY
     if not api_key:
         log.error("❌ OPENAI_API_KEY not found in environment variables")
         log.info("Please set OPENAI_API_KEY in your .env file or environment")
@@ -133,7 +134,7 @@ def check_environment():
         log.info("CHANNEL_ID=your_channel_id_here")
     
     # Check environment variables
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = import_config("OPENAI_API_KEY")
     if api_key:
         log.info(f"✅ OPENAI_API_KEY found in environment")
     else:
