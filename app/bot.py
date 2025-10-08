@@ -31,6 +31,13 @@ AWAITING_POSITION_UPDATE = 2
 # Store admin keyword extraction sessions in memory
 admin_keyword_sessions = {}
 
+async def _notify_admins(ctx: ContextTypes.DEFAULT_TYPE, text: str, reply_to_message_id: int | None = None):
+    for admin_id in settings.ADMIN_IDS:
+        try:
+            await ctx.bot.send_message(chat_id=admin_id, text=text, parse_mode="HTML", reply_to_message_id=reply_to_message_id)
+        except Exception as e:
+            log.warning(f"Failed to notify admin {admin_id}: {e}")
+
 def _format_classification_message(
     employment_type: str | None,
     position: str | None,
@@ -299,6 +306,7 @@ async def handle_text_messages(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await ensure_user_record(update)
     welcome_text = (
         "🤖 <b>به بات شغلی CE خوش آمدید!</b>\n\n"
         "📋 <b>چگونه کار می‌کند:</b>\n"
@@ -318,6 +326,9 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "🚀 <b>شروع کنید:</b> /update_my_position"
     )
     await update.message.reply_text(welcome_text, parse_mode="HTML")
+    user = update.effective_user
+    username = f"@{user.username}" if user.username else f"user_id {user.id}"
+    await _notify_admins(ctx, f"🚀 کاربر {username} بات را شروع کرد (/start)")
 
 async def stop(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("دیگر به‌روزرسانی‌های شغلی دریافت نخواهید کرد. برای راه‌اندازی مجدد، از /start استفاده کنید.")
@@ -547,6 +558,14 @@ async def handle_position_document(update: Update, ctx: ContextTypes.DEFAULT_TYP
         "موقعیت شغلی مورد نظر شما از رزومه به‌روزرسانی شد."
     )
     await update.message.reply_text(_format_preferred_position_message(preferred), parse_mode="HTML")
+    # Notify admins about the update (source and result)
+    user = update.effective_user
+    username = f"@{user.username}" if user.username else f"user_id {user.id}"
+    await _notify_admins(
+        ctx,
+        ("✍️ به‌روزرسانی موقعیت شغلی توسط " + username + " (از PDF)\n\n"
+         + "<b>نتیجه به‌روزرسانی:</b>\n" + _format_preferred_position_message(preferred))
+    )
 
 
 async def handle_position_text_if_waiting(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -560,6 +579,16 @@ async def handle_position_text_if_waiting(update: Update, ctx: ContextTypes.DEFA
     ctx.user_data["awaiting_position_update"] = False
     await update.message.reply_text("موقعیت شغلی مورد نظر شما به‌روزرسانی شد.")
     await update.message.reply_text(_format_preferred_position_message(preferred), parse_mode="HTML")
+    # Notify admins about the update (source and result)
+    user = update.effective_user
+    username = f"@{user.username}" if user.username else f"user_id {user.id}"
+    preview = (text[:300] + ("…" if len(text) > 300 else "")) if text else "(متن خالی)"
+    await _notify_admins(
+        ctx,
+        ("✍️ به‌روزرسانی موقعیت شغلی توسط " + username + " (متن)\n\n"
+         + "<b>متن ارسالی:</b>\n" + preview + "\n\n"
+         + "<b>نتیجه به‌روزرسانی:</b>\n" + _format_preferred_position_message(preferred))
+    )
 
 
 async def my_position(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -713,12 +742,25 @@ async def match_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     message_id=p.channel_msg_id,
                 )
                 sent += 1
+                # Admin notification about delivery
+                user = update.effective_user
+                username = f"@{user.username}" if user.username else f"user_id {user.id}"
+                await _notify_admins(
+                    ctx,
+                    f"📨 پست شغلی #{p.channel_msg_id} به {username} ارسال شد (جستجوی دستی)"
+                )
             else:
                 # Fallback to sending raw text if we can't forward
                 text = (p.text or "") or (p.caption or "")
                 if text:
                     await update.message.reply_text(text[:4000])
                     sent += 1
+                    user = update.effective_user
+                    username = f"@{user.username}" if user.username else f"user_id {user.id}"
+                    await _notify_admins(
+                        ctx,
+                        f"📨 متن پست شغلی #{p.channel_msg_id} به {username} ارسال شد (جستجوی دستی)"
+                    )
         except Exception as e:
             log.warning(f"Failed to forward message {p.channel_msg_id}: {e}")
             try:
@@ -761,11 +803,22 @@ async def _notify_matched_users_for_post(ctx: ContextTypes.DEFAULT_TYPE, post: C
                             from_chat_id=post.channel_chat_id,
                             message_id=post.channel_msg_id,
                         )
+                        # Notify admins for auto-delivery (forward)
+                        username = f"@{user.username}" if getattr(user, "username", None) else f"user_id {user.user_id}"
+                        await _notify_admins(
+                            ctx,
+                            f"📨 پست شغلی #{post.channel_msg_id} به {username} ارسال شد (اتوماتیک)"
+                        )
                     else:
                         # Fallback to sending raw text if we can't forward
                         text = (post.text or "") or (post.caption or "")
                         if text:
                             await ctx.bot.send_message(chat_id=user.chat_id, text=text[:4000])
+                            username = f"@{user.username}" if getattr(user, "username", None) else f"user_id {user.user_id}"
+                            await _notify_admins(
+                                ctx,
+                                f"📨 متن پست شغلی #{post.channel_msg_id} به {username} ارسال شد (اتوماتیک)"
+                            )
 
                     # Record delivery
                     db.add(Delivery(user_id=user.user_id, channel_msg_id=post.channel_msg_id))
