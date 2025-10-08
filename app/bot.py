@@ -280,7 +280,8 @@ async def select_keyword(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     await query.edit_message_text(text=f"شما انتخاب کردید: {selected_keyword}. پست‌های شغلی مرتبط را برای شما فوروارد خواهم کرد.")
 
-async def query_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def handle_text_messages(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Handle all text messages in private chats - route to appropriate handler"""
     if not update.message or not update.message.text:
         return
     # If we're waiting for text after /update_my_position, route to that handler
@@ -294,7 +295,7 @@ async def query_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "• /my_position – مشاهده تنظیمات ذخیره شده\n"
         "• /help – مشاهده تمام دستورات و نحوه استفاده"
     )
-    await update.message.reply_text(help_hint)
+    await help_command(update, ctx)
 
 
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -391,8 +392,7 @@ def build_app():
     application.add_handler(MessageHandler(filters.ChatType.CHANNEL, on_channel_post))
     # Private chat-only handlers
     application.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.Document.PDF, handle_position_document))
-    application.add_handler(MessageHandler(filters.ChatType.PRIVATE & (filters.TEXT & ~filters.COMMAND), handle_position_text_if_waiting))
-    application.add_handler(MessageHandler(filters.ChatType.PRIVATE & (filters.TEXT & ~filters.COMMAND), query_handler))
+    application.add_handler(MessageHandler(filters.ChatType.PRIVATE & (filters.TEXT & ~filters.COMMAND), handle_text_messages))
     return application
 
 
@@ -627,7 +627,7 @@ def _seniority_rank(value: str | None) -> int:
 
 
 def _is_position_match(preferred: PreferredJobPosition, post: ChannelPost) -> bool:
-    """Check if a job post matches user preferences"""
+    """Check if a job post matches user preferences, with detailed debug prints for mismatches"""
     def eq(a, b):
         if a is None or str(a).strip() == "":
             return True
@@ -635,22 +635,43 @@ def _is_position_match(preferred: PreferredJobPosition, post: ChannelPost) -> bo
 
     # Basic matching criteria
     if not eq(preferred.employment_type, post.employment_type):
+        print(
+            f"[MATCH DEBUG] employment_type mismatch: "
+            f"user='{preferred.employment_type}' vs post='{post.employment_type}'"
+        )
         return False
     if not eq(preferred.position, post.position):
+        print(
+            f"[MATCH DEBUG] position mismatch: "
+            f"user='{preferred.position}' vs post='{post.position}'"
+        )
         return False
     if not eq(preferred.work_schedule, post.work_schedule):
+        print(
+            f"[MATCH DEBUG] work_schedule mismatch: "
+            f"user='{preferred.work_schedule}' vs post='{post.work_schedule}'"
+        )
         return False
 
     # Seniority level check - post level should not be higher than user's preferred level
     user_rank = _seniority_rank(preferred.seniority_level)
     post_rank = _seniority_rank(post.seniority_level)
     if user_rank is not None and post_rank is not None and post_rank > user_rank:
+        print(
+            f"[MATCH DEBUG] seniority_level mismatch: "
+            f"user='{preferred.seniority_level}' (rank={user_rank}) vs post='{post.seniority_level}' (rank={post_rank})"
+        )
         return False
 
     # Skills overlap check - at least 50% overlap required (only if user has skills specified)
     if preferred.skills_technologies:
         overlap = _skills_overlap_ratio(preferred.skills_technologies, post.skills_technologies)
         if overlap < 0.5:
+            print(
+                f"[MATCH DEBUG] skills_technologies overlap too low: "
+                f"user='{preferred.skills_technologies}' vs post='{post.skills_technologies}' "
+                f"(overlap={overlap:.2f})"
+            )
             return False
 
     return True
