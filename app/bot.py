@@ -54,7 +54,7 @@ async def _build_telegram_post_link(ctx: ContextTypes.DEFAULT_TYPE, channel_chat
     # Try to fetch channel username for public link t.me/{username}/{message_id}
     try:
         chat = await ctx.bot.get_chat(chat_id=channel_chat_id)
-        channel_name = settings.CHANNEL_NAME
+        channel_name = settings.CHANNEL_ID
         if chat.username:
             return f"https://t.me/{channel_name}/{message_id}"
     except Exception as e:
