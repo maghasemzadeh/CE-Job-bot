@@ -47,55 +47,55 @@ def _format_classification_message(
 ):
     def fmt_bool(v: bool | None) -> str:
         if v is True:
-            return "yes"
+            return "بله"
         if v is False:
-            return "no"
-        return "don't care"
+            return "خیر"
+        return "مهم نیست"
     def fmt_val(v) -> str:
         if v is None:
-            return "don't care"
+            return "مهم نیست"
         s = str(v).strip()
-        return s if s else "don't care"
+        return s if s else "مهم نیست"
     lines = [
-        "<b>📌 Classified job</b>",
-        f"• 🧑‍💼 <b>Employment type</b>: {fmt_val(employment_type)}",
-        f"• 💼 <b>Position</b>: {fmt_val(position)}",
-        f"• 🏭 <b>Industry</b>: {fmt_val(industry)}",
-        f"• 📈 <b>Seniority level</b>: {fmt_val(seniority_level)}",
-        f"• ⌛️ <b>Years experience</b>: {fmt_val(years_experience)}",
-        f"• 📍 <b>Work location</b>: {fmt_val(work_location)}",
-        f"• 🛠️ <b>Skills/technologies</b>: {fmt_val(skills_technologies)}",
-        f"• 💰 <b>Bonuses</b>: {fmt_bool(bonuses)}",
-        f"• 🏥 <b>Health insurance</b>: {fmt_bool(health_insurance)}",
-        f"• 📊 <b>Stock options</b>: {fmt_bool(stock_options)}",
-        f"• 🗓️ <b>Work schedule</b>: {fmt_val(work_schedule)}",
-        f"• 🏢 <b>Company size</b>: {fmt_val(company_size)}",
+        "<b>📌 شغل طبقه‌بندی شده</b>",
+        f"• 🧑‍💼 <b>نوع اشتغال</b>: {fmt_val(employment_type)}",
+        f"• 💼 <b>موقعیت شغلی</b>: {fmt_val(position)}",
+        f"• 🏭 <b>صنعت</b>: {fmt_val(industry)}",
+        f"• 📈 <b>سطح ارشدیت</b>: {fmt_val(seniority_level)}",
+        f"• ⌛️ <b>سال‌های تجربه</b>: {fmt_val(years_experience)}",
+        f"• 📍 <b>محل کار</b>: {fmt_val(work_location)}",
+        f"• 🛠️ <b>مهارت‌ها/تکنولوژی‌ها</b>: {fmt_val(skills_technologies)}",
+        f"• 💰 <b>پاداش</b>: {fmt_bool(bonuses)}",
+        f"• 🏥 <b>بیمه درمانی</b>: {fmt_bool(health_insurance)}",
+        f"• 📊 <b>سهام شرکت</b>: {fmt_bool(stock_options)}",
+        f"• 🗓️ <b>برنامه کاری</b>: {fmt_val(work_schedule)}",
+        f"• 🏢 <b>اندازه شرکت</b>: {fmt_val(company_size)}",
     ]
     return "\n".join(lines)
 
 async def extract_keywords(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in settings.ADMIN_IDS:
-        await update.message.reply_text("This command is only for admins.")
+        await update.message.reply_text("این دستور فقط برای ادمین‌ها است.")
         return ConversationHandler.END
 
     # Start a new session for this admin
     admin_keyword_sessions[user_id] = []
     await update.message.reply_text(
-        "Forward all channel job posts you want to extract keywords from. "
-        "When done, send /extract_keywords_end."
+        "تمام پست‌های شغلی کانال را که می‌خواهید کلمات کلیدی از آن‌ها استخراج شود، فوروارد کنید. "
+        "وقتی تمام شد، /extract_keywords_end را ارسال کنید."
     )
     return EXTRACTING_KEYWORDS
 
 async def extract_keywords_end(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in settings.ADMIN_IDS:
-        await update.message.reply_text("This command is only for admins.")
+        await update.message.reply_text("این دستور فقط برای ادمین‌ها است.")
         return ConversationHandler.END
 
     posts = admin_keyword_sessions.pop(user_id, [])
     if not posts:
-        await update.message.reply_text("No forwarded messages received. Please forward channel posts first.")
+        await update.message.reply_text("هیچ پیام فوروارد شده‌ای دریافت نشد. لطفاً ابتدا پست‌های کانال را فوروارد کنید.")
         return ConversationHandler.END
 
     # Process each post: extract keywords and classify
@@ -154,12 +154,12 @@ async def extract_keywords_end(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         db.commit()
 
     # Send summary
-    summary = f"✅ Processing completed!\n\n"
-    summary += f"📊 Classified {classified_posts} job posts\n"
-    summary += f"🔑 Extracted {len(all_keywords)} keywords\n\n"
+    summary = f"✅ پردازش تکمیل شد!\n\n"
+    summary += f"📊 {classified_posts} پست شغلی طبقه‌بندی شد\n"
+    summary += f"🔑 {len(all_keywords)} کلمه کلیدی استخراج شد\n\n"
     
     if all_keywords:
-        summary += f"Keywords: {', '.join(sorted(all_keywords))}"
+        summary += f"کلمات کلیدی: {', '.join(sorted(all_keywords))}"
     
     await update.message.reply_text(summary)
     return ConversationHandler.END
@@ -263,7 +263,7 @@ async def collect_forwarded_message(update: Update, ctx: ContextTypes.DEFAULT_TY
                     )
                 except Exception as e:
                     log.error(f"Classification failed for post {msg.forward_from_message_id}: {e}")
-                    await update.message.reply_text("Failed to classify this message.")
+                    await update.message.reply_text("طبقه‌بندی این پیام ناموفق بود.")
             # Keep session active until /extract_keywords_end
             return EXTRACTING_KEYWORDS
     return EXTRACTING_KEYWORDS
@@ -278,36 +278,54 @@ async def select_keyword(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         db.add(pref)
         db.commit()
     await query.answer()
-    await query.edit_message_text(text=f"You've selected: {selected_keyword}. I'll forward related job posts to you.")
+    await query.edit_message_text(text=f"شما انتخاب کردید: {selected_keyword}. پست‌های شغلی مرتبط را برای شما فوروارد خواهم کرد.")
 
 async def query_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
-    # If we're waiting for text after /update_position, route to that handler
+    # If we're waiting for text after /update_my_position, route to that handler
     if ctx.user_data.get("awaiting_position_update"):
         await handle_position_text_if_waiting(update, ctx)
         return
     # Otherwise, guide the user to commands
     help_hint = (
-        "Please use commands to interact with the bot:\n"
-        "• /update_position – set or update your preferred job position\n"
-        "• /my_position – view your saved preferences\n"
-        "• /help – see all commands and how to use them"
+        "لطفاً از دستورات برای تعامل با بات استفاده کنید:\n"
+        "• /update_my_position – تنظیم یا به‌روزرسانی موقعیت شغلی مورد نظر\n"
+        "• /my_position – مشاهده تنظیمات ذخیره شده\n"
+        "• /help – مشاهده تمام دستورات و نحوه استفاده"
     )
     await update.message.reply_text(help_hint)
 
 
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Welcome to the job bot! Send me job preferences or ask for job posts.")
+    welcome_text = (
+        "🤖 <b>به بات شغلی CE خوش آمدید!</b>\n\n"
+        "📋 <b>چگونه کار می‌کند:</b>\n"
+        "1️⃣ <b>تنظیم ترجیحات شغلی:</b>\n"
+        "   • با زدن دستور /update_my_position می‌توانید PDF خود را آپلود کنید، یا\n"
+        "   • نوع شغل مورد نظرتان را به صورت متن بفرستید\n\n"
+        "2️⃣ <b>جستجو در مشاغل اخیر:</b>\n"
+        "   • از دستور /match_positions استفاده کنید\n"
+        "   • مشاغل مرتبط با ترجیحات شما در یک ماه اخیر را می‌بینید\n\n"
+        "3️⃣ <b>دریافت مشاغل جدید:</b>\n"
+        "   • به صورت خودکار مشاغل جدید مرتبط را دریافت می‌کنید\n"
+        "   • برای فعال‌سازی: /activate_new_positions\n"
+        "   • برای غیرفعال‌سازی: /deactivate_new_positions\n\n"
+        "📱 <b>دستورات مفید:</b>\n"
+        "• /my_position - مشاهده ترجیحات ذخیره شده\n"
+        "• /help - راهنمای کامل\n\n"
+        "🚀 <b>شروع کنید:</b> /update_my_position"
+    )
+    await update.message.reply_text(welcome_text, parse_mode="HTML")
 
 async def stop(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("You will no longer receive job updates. To restart, use /start.")
+    await update.message.reply_text("دیگر به‌روزرسانی‌های شغلی دریافت نخواهید کرد. برای راه‌اندازی مجدد، از /start استفاده کنید.")
 
 async def fetch_channel_posts(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Admin command to fetch recent posts from the channel and store them"""
     user_id = update.effective_user.id
     if user_id not in settings.ADMIN_IDS:
-        await update.message.reply_text("This command is only for admins.")
+        await update.message.reply_text("این دستور فقط برای ادمین‌ها است.")
         return
 
     try:
@@ -320,26 +338,26 @@ async def fetch_channel_posts(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # 3. Or manually forward posts to the bot
         
         await update.message.reply_text(
-            "Channel post fetching requires Telegram Client API access. "
-            "For now, please forward channel posts manually using /extract_keywords command."
+            "دریافت پست‌های کانال نیاز به دسترسی Telegram Client API دارد. "
+            "فعلاً لطفاً پست‌های کانال را به صورت دستی با استفاده از دستور /extract_keywords فوروارد کنید."
         )
         
     except Exception as e:
         log.error(f"Error fetching channel posts: {e}")
-        await update.message.reply_text(f"Error fetching channel posts: {str(e)}")
+        await update.message.reply_text(f"خطا در دریافت پست‌های کانال: {str(e)}")
 
 def build_app():
     async def post_init(app):
         try:
             await app.bot.set_my_commands([
-                BotCommand("start", "Start the bot"),
-                BotCommand("help", "Show help and available commands"),
-                BotCommand("update_position", "Set/update your preferred job position"),
-                BotCommand("my_position", "Show your saved preferred position"),
-                BotCommand("search_recent_positions", "Find and forward recent matching jobs"),
-                BotCommand("activate_new_jobs", "Enable receiving new matching jobs"),
-                BotCommand("deactive_new_jobs", "Disable receiving new matching jobs"),
-                BotCommand("stop", "Stop receiving updates"),
+                BotCommand("start", "شروع بات"),
+                BotCommand("help", "نمایش راهنما و دستورات موجود"),
+                BotCommand("update_my_position", "تنظیم/به‌روزرسانی موقعیت شغلی مورد نظر"),
+                BotCommand("my_position", "نمایش موقعیت شغلی ذخیره شده"),
+                BotCommand("match_positions", "جستجو و فوروارد مشاغل مطابق اخیر"),
+                BotCommand("activate_new_positions", "فعال‌سازی دریافت مشاغل مطابق جدید"),
+                BotCommand("deactivate_new_positions", "غیرفعال‌سازی دریافت مشاغل مطابق جدید"),
+                BotCommand("stop", "توقف دریافت به‌روزرسانی‌ها"),
             ])
         except Exception as e:
             log.warning(f"Failed to set bot commands: {e}")
@@ -363,11 +381,11 @@ def build_app():
     application.add_handler(CommandHandler("fetch_posts", fetch_channel_posts))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(keyword_extraction_conv)
-    application.add_handler(CommandHandler("update_position", update_position))
+    application.add_handler(CommandHandler("update_my_position", update_my_position))
     application.add_handler(CommandHandler("my_position", my_position))
-    application.add_handler(CommandHandler("search_recent_positions", search_recent_positions))
-    application.add_handler(CommandHandler("activate_new_jobs", activate_new_jobs))
-    application.add_handler(CommandHandler("deactive_new_jobs", deactive_new_jobs))
+    application.add_handler(CommandHandler("match_positions", match_positions))
+    application.add_handler(CommandHandler("activate_new_positions", activate_new_positions))
+    application.add_handler(CommandHandler("deactivate_new_positions", deactivate_new_positions))
     application.add_handler(CallbackQueryHandler(select_keyword))
     # Handle channel posts (bot must be admin in the channel) BEFORE generic text handlers
     application.add_handler(MessageHandler(filters.ChatType.CHANNEL, on_channel_post))
@@ -400,10 +418,10 @@ async def ensure_user_record(update: Update):
         db.commit()
 
 
-async def update_position(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def update_my_position(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await ensure_user_record(update)
     await update.message.reply_text(
-        "Send your preferred position details as text, or upload a PDF resume."
+        "جزئیات موقعیت شغلی مورد نظر خود را به صورت متن ارسال کنید، یا رزومه PDF آپلود کنید."
     )
     # Flag the context that we're awaiting an update
     ctx.user_data["awaiting_position_update"] = True
@@ -460,31 +478,31 @@ def _classify_and_save_preference(db, user_id: int, text: str, resume_file_id: s
 def _format_preferred_position_message(preferred: PreferredJobPosition) -> str:
     def fmt_bool(v: bool | None) -> str:
         if v is True:
-            return "yes"
+            return "بله"
         if v is False:
-            return "no"
-        return "don't care"
+            return "خیر"
+        return "مهم نیست"
 
     def fmt_val(v) -> str:
         if v is None:
-            return "don't care"
+            return "مهم نیست"
         s = str(v).strip()
-        return s if s else "don't care"
+        return s if s else "مهم نیست"
 
     lines = [
-        "<b>🎯 Your preferred position</b>",
-        f"• 🧑‍💼 <b>Employment type</b>: {fmt_val(preferred.employment_type)}",
-        f"• 💼 <b>Position</b>: {fmt_val(preferred.position)}",
-        f"• 🏭 <b>Industry</b>: {fmt_val(preferred.industry)}",
-        f"• 📈 <b>Seniority level</b>: {fmt_val(preferred.seniority_level)}",
-        f"• ⌛️ <b>Years experience</b>: {fmt_val(preferred.years_experience)}",
-        f"• 📍 <b>Work location</b>: {fmt_val(preferred.work_location)}",
-        f"• 🛠️ <b>Skills/technologies</b>: {fmt_val(preferred.skills_technologies)}",
-        f"• 💰 <b>Bonuses</b>: {fmt_bool(preferred.bonuses)}",
-        f"• 🏥 <b>Health insurance</b>: {fmt_bool(preferred.health_insurance)}",
-        f"• 📊 <b>Stock options</b>: {fmt_bool(preferred.stock_options)}",
-        f"• 🗓️ <b>Work schedule</b>: {fmt_val(preferred.work_schedule)}",
-        f"• 🏢 <b>Company size</b>: {fmt_val(preferred.company_size)}",
+        "<b>🎯 موقعیت شغلی مورد نظر شما</b>",
+        f"• 🧑‍💼 <b>نوع اشتغال</b>: {fmt_val(preferred.employment_type)}",
+        f"• 💼 <b>موقعیت شغلی</b>: {fmt_val(preferred.position)}",
+        f"• 🏭 <b>صنعت</b>: {fmt_val(preferred.industry)}",
+        f"• 📈 <b>سطح ارشدیت</b>: {fmt_val(preferred.seniority_level)}",
+        f"• ⌛️ <b>سال‌های تجربه</b>: {fmt_val(preferred.years_experience)}",
+        f"• 📍 <b>محل کار</b>: {fmt_val(preferred.work_location)}",
+        f"• 🛠️ <b>مهارت‌ها/تکنولوژی‌ها</b>: {fmt_val(preferred.skills_technologies)}",
+        f"• 💰 <b>پاداش</b>: {fmt_bool(preferred.bonuses)}",
+        f"• 🏥 <b>بیمه درمانی</b>: {fmt_bool(preferred.health_insurance)}",
+        f"• 📊 <b>سهام شرکت</b>: {fmt_bool(preferred.stock_options)}",
+        f"• 🗓️ <b>برنامه کاری</b>: {fmt_val(preferred.work_schedule)}",
+        f"• 🏢 <b>اندازه شرکت</b>: {fmt_val(preferred.company_size)}",
     ]
     return "\n".join(lines)
 
@@ -496,7 +514,7 @@ async def handle_position_document(update: Update, ctx: ContextTypes.DEFAULT_TYP
     user_id = update.effective_user.id
     document = update.message.document
     if not document or document.mime_type != "application/pdf":
-        await update.message.reply_text("Please upload a PDF document.")
+        await update.message.reply_text("لطفاً یک سند PDF آپلود کنید.")
         return
     # Download PDF to a temp folder
     base_dir = Path(os.getenv("RESUME_DIR", "./resumes")).resolve()
@@ -526,7 +544,7 @@ async def handle_position_document(update: Update, ctx: ContextTypes.DEFAULT_TYP
 
     ctx.user_data["awaiting_position_update"] = False
     await update.message.reply_text(
-        "Your preferred position has been updated from your resume."
+        "موقعیت شغلی مورد نظر شما از رزومه به‌روزرسانی شد."
     )
     await update.message.reply_text(_format_preferred_position_message(preferred), parse_mode="HTML")
 
@@ -540,7 +558,7 @@ async def handle_position_text_if_waiting(update: Update, ctx: ContextTypes.DEFA
     with SessionLocal() as db:
         preferred = _classify_and_save_preference(db, user_id=user_id, text=text)
     ctx.user_data["awaiting_position_update"] = False
-    await update.message.reply_text("Your preferred position has been updated.")
+    await update.message.reply_text("موقعیت شغلی مورد نظر شما به‌روزرسانی شد.")
     await update.message.reply_text(_format_preferred_position_message(preferred), parse_mode="HTML")
 
 
@@ -549,23 +567,23 @@ async def my_position(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     with SessionLocal() as db:
         preferred = db.query(PreferredJobPosition).filter(PreferredJobPosition.user_id == user_id).first()
         if not preferred:
-            await update.message.reply_text("No preferred position is set yet. Use /update_position to provide details.")
+            await update.message.reply_text("هنوز موقعیت شغلی مورد نظر تنظیم نشده است. از /update_my_position برای ارائه جزئیات استفاده کنید.")
             return
         await update.message.reply_text(_format_preferred_position_message(preferred), parse_mode="HTML")
 
 
 async def help_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = (
-        "<b>🤖 How to use CE Job Bot</b>\n\n"
-        "• /start – start the bot\n"
-        "• /help – show this help\n"
-        "• /update_position – send text or upload a PDF resume to set/update your preferences\n"
-        "• /my_position – view your saved preferred position\n"
-        "• /search_recent_positions – find and forward recent matching jobs based on your preferences\n"
-        "• /activate_new_jobs – enable receiving new matching jobs\n"
-        "• /deactive_new_jobs – disable receiving new matching jobs\n"
-        "• /stop – stop receiving updates\n\n"
-        "Tip: After /update_position, your next message (text or PDF) will be used to update your preferences."
+        "<b>🤖 نحوه استفاده از بات شغلی CE</b>\n\n"
+        "• /start – شروع بات\n"
+        "• /help – نمایش این راهنما\n"
+        "• /update_my_position – ارسال متن یا آپلود رزومه PDF برای تنظیم/به‌روزرسانی ترجیحات\n"
+        "• /my_position – مشاهده موقعیت شغلی مورد نظر ذخیره شده\n"
+        "• /match_positions – جستجو و فوروارد مشاغل مطابق اخیر بر اساس ترجیحات شما\n"
+        "• /activate_new_positions – فعال‌سازی دریافت مشاغل مطابق جدید\n"
+        "• /deactivate_new_positions – غیرفعال‌سازی دریافت مشاغل مطابق جدید\n"
+        "• /stop – توقف دریافت به‌روزرسانی‌ها\n\n"
+        "نکته: پس از /update_my_position، پیام بعدی شما (متن یا PDF) برای به‌روزرسانی ترجیحات استفاده خواهد شد."
     )
     await update.message.reply_text(text, parse_mode="HTML")
 
@@ -608,13 +626,13 @@ def _seniority_rank(value: str | None) -> int:
     return order.get(key, 999)
 
 
-async def search_recent_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def match_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    await update.message.reply_text("Trying to find job position realted to your preferences...")
+    await update.message.reply_text("در حال جستجوی موقعیت‌های شغلی مرتبط با ترجیحات شما...")
     with SessionLocal() as db:
         preferred = db.query(PreferredJobPosition).filter(PreferredJobPosition.user_id == user_id).first()
         if not preferred:
-            await update.message.reply_text("You don't have a preferred position yet. Use /update_position first.")
+            await update.message.reply_text("هنوز موقعیت شغلی مورد نظر ندارید. ابتدا از /update_my_position استفاده کنید.")
             return
 
         thirty_days_ago = datetime.utcnow() - timedelta(days=30)
@@ -655,7 +673,7 @@ async def search_recent_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE
             matches.append(p)
 
     if not matches:
-        await update.message.reply_text("No matching positions found in recent posts.")
+        await update.message.reply_text("هیچ موقعیت شغلی مطابقی در پست‌های اخیر یافت نشد.")
         return
 
     sent = 0
@@ -684,7 +702,7 @@ async def search_recent_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE
             except Exception as e2:
                 log.warning(f"Also failed to send text fallback: {e2}")
 
-    await update.message.reply_text(f"Forwarded {sent} matching post(s).")
+    await update.message.reply_text(f"{sent} پست مطابق مهارت شما فوروارد شد.")
 
 
 async def _notify_matched_users_for_post(ctx: ContextTypes.DEFAULT_TYPE, post: ChannelPost):
@@ -709,7 +727,7 @@ async def _notify_matched_users_for_post(ctx: ContextTypes.DEFAULT_TYPE, post: C
                     return True
                 return (str(a).strip().lower() == str(b or "").strip().lower())
 
-            # Basic matching similar to /search_recent_positions
+            # Basic matching similar to /match_positions
             if not eq(preferred.employment_type, post.employment_type):
                 continue
             if not eq(preferred.position, post.position):
@@ -846,7 +864,7 @@ async def on_channel_post(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         log.warning(f"Failed notifying users for post {post.channel_msg_id}: {e}")
 
 
-async def activate_new_jobs(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def activate_new_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     with SessionLocal() as db:
         preferred = db.query(PreferredJobPosition).filter(PreferredJobPosition.user_id == user_id).first()
@@ -857,10 +875,10 @@ async def activate_new_jobs(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             preferred.active = True
             db.add(preferred)
         db.commit()
-    await update.message.reply_text("✅ You will receive new matching job posts.")
+    await update.message.reply_text("✅ پست‌های شغلی مطابق جدید را دریافت خواهید کرد.")
 
 
-async def deactive_new_jobs(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def deactivate_new_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     with SessionLocal() as db:
         preferred = db.query(PreferredJobPosition).filter(PreferredJobPosition.user_id == user_id).first()
@@ -871,4 +889,4 @@ async def deactive_new_jobs(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             preferred.active = False
             db.add(preferred)
         db.commit()
-    await update.message.reply_text("🚫 You will not receive new matching job posts. Use /activate_new_jobs to re-enable.")
+    await update.message.reply_text("🚫 پست‌های شغلی مطابق جدید را دریافت نخواهید کرد. از /activate_new_positions برای فعال‌سازی مجدد استفاده کنید.")
