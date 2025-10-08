@@ -621,9 +621,9 @@ def _seniority_rank(value: str | None) -> int:
         "vp": 8,
     }
     if not value:
-        return 999
+        return None
     key = value.strip().lower()
-    return order.get(key, 999)
+    return order.get(key, None)
 
 
 async def match_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -640,7 +640,9 @@ async def match_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ChannelPost.posted_at >= thirty_days_ago,
             ChannelPost.is_classified == True
         ).order_by(ChannelPost.posted_at.desc()).limit(200).all()
-
+        print('posts', len(posts))
+        posts2 = db.query(ChannelPost).order_by(ChannelPost.posted_at.desc()).limit(200).all()
+        print('posts2', len(posts2))
         matches = []
         for p in posts:
             print(f"trying to match post {p.channel_msg_id}")
@@ -661,7 +663,7 @@ async def match_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
             user_rank = _seniority_rank(preferred.seniority_level)
             post_rank = _seniority_rank(p.seniority_level)
-            if post_rank > user_rank:
+            if user_rank and post_rank and post_rank > user_rank:
                 print(f"seniority_level mismatch: {preferred.seniority_level} != {p.seniority_level}")
                 continue
 
