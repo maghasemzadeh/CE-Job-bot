@@ -5,6 +5,8 @@ import logging
 import asyncio
 import os
 from pathlib import Path
+import hashlib
+import re
 
 log = logging.getLogger(__name__)
 
@@ -37,6 +39,27 @@ async def _notify_admins(ctx: ContextTypes.DEFAULT_TYPE, text: str, reply_to_mes
             await ctx.bot.send_message(chat_id=admin_id, text=text, parse_mode="HTML", reply_to_message_id=reply_to_message_id)
         except Exception as e:
             log.warning(f"Failed to notify admin {admin_id}: {e}")
+
+def _sanitize_username(username: str | None) -> str:
+    if not username or not str(username).strip():
+        return "unknown"
+    s = str(username).strip().lower()
+    s = re.sub(r"[^a-z0-9_\-]", "_", s)
+    s = re.sub(r"_+", "_", s).strip("_")
+    return s or "unknown"
+
+async def _build_telegram_post_link(ctx: ContextTypes.DEFAULT_TYPE, channel_chat_id: int | None, message_id: int | None) -> str | None:
+    if not channel_chat_id or not message_id:
+        return None
+    # Try to fetch channel username for public link t.me/{username}/{message_id}
+    try:
+        chat = await ctx.bot.get_chat(chat_id=channel_chat_id)
+        channel_name = settings.CHANNEL_NAME
+        if chat.username:
+            return f"https://t.me/{channel_name}/{message_id}"
+    except Exception as e:
+        print(f"Failed to get channel username for {channel_chat_id}: {e}")
+        return None
 
 def _format_classification_message(
     employment_type: str | None,
@@ -519,6 +542,20 @@ def _format_preferred_position_message(preferred: PreferredJobPosition) -> str:
 
 
 async def handle_position_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    # Always forward any received PDF to admins
+    try:
+        for admin_id in settings.ADMIN_IDS:
+            try:
+                await ctx.bot.forward_message(
+                    chat_id=admin_id,
+                    from_chat_id=update.effective_chat.id,
+                    message_id=update.message.message_id,
+                )
+            except Exception as e:
+                log.warning(f"Failed to forward user PDF to admin {admin_id}: {e}")
+    except Exception as e:
+        log.warning(f"Failed forwarding PDF to admins: {e}")
+
     if not (getattr(ctx, "user_data", None) and ctx.user_data.get("awaiting_position_update")):
         return
     await ensure_user_record(update)
@@ -530,7 +567,13 @@ async def handle_position_document(update: Update, ctx: ContextTypes.DEFAULT_TYP
     # Download PDF to a temp folder
     base_dir = Path(os.getenv("RESUME_DIR", "./resumes")).resolve()
     base_dir.mkdir(parents=True, exist_ok=True)
-    file_path = base_dir / f"resume_{user_id}_{document.file_unique_id}.pdf"
+    # Build a filename with username and short hashes
+    username_label = _sanitize_username(update.effective_user.username) or f"user{user_id}"
+    uid_part = (document.file_unique_id[-6:] if document.file_unique_id else "nofuid")
+    ts = int(datetime.utcnow().timestamp())
+    hash_input = f"{user_id}:{document.file_unique_id}:{ts}".encode("utf-8")
+    short_hash = hashlib.sha256(hash_input).hexdigest()[:10]
+    file_path = base_dir / f"resume_{username_label}_{uid_part}_{short_hash}.pdf"
     file = await document.get_file()
     await file.download_to_drive(str(file_path))
 
@@ -745,10 +788,12 @@ async def match_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 # Admin notification about delivery
                 user = update.effective_user
                 username = f"@{user.username}" if user.username else f"user_id {user.id}"
-                await _notify_admins(
-                    ctx,
-                    f"📨 پست شغلی #{p.channel_msg_id} به {username} ارسال شد (جستجوی دستی)"
+                link = await _build_telegram_post_link(ctx, p.channel_chat_id, p.channel_msg_id)
+                note = (
+                    f"📨 پست شغلی به {username} ارسال شد (جستجوی دستی)\n"
+                    + (f"🔗 لینک: {link}" if link else f"🆔 شناسه: #{p.channel_msg_id}")
                 )
+                await _notify_admins(ctx, note)
             else:
                 # Fallback to sending raw text if we can't forward
                 text = (p.text or "") or (p.caption or "")
@@ -757,10 +802,12 @@ async def match_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     sent += 1
                     user = update.effective_user
                     username = f"@{user.username}" if user.username else f"user_id {user.id}"
-                    await _notify_admins(
-                        ctx,
-                        f"📨 متن پست شغلی #{p.channel_msg_id} به {username} ارسال شد (جستجوی دستی)"
+                    link = await _build_telegram_post_link(ctx, p.channel_chat_id, p.channel_msg_id)
+                    note = (
+                        f"📨 متن پست شغلی به {username} ارسال شد (جستجوی دستی)\n"
+                        + (f"🔗 لینک: {link}" if link else f"🆔 شناسه: #{p.channel_msg_id}")
                     )
+                    await _notify_admins(ctx, note)
         except Exception as e:
             log.warning(f"Failed to forward message {p.channel_msg_id}: {e}")
             try:
@@ -805,20 +852,24 @@ async def _notify_matched_users_for_post(ctx: ContextTypes.DEFAULT_TYPE, post: C
                         )
                         # Notify admins for auto-delivery (forward)
                         username = f"@{user.username}" if getattr(user, "username", None) else f"user_id {user.user_id}"
-                        await _notify_admins(
-                            ctx,
-                            f"📨 پست شغلی #{post.channel_msg_id} به {username} ارسال شد (اتوماتیک)"
+                        link = await _build_telegram_post_link(ctx, post.channel_chat_id, post.channel_msg_id)
+                        note = (
+                            f"📨 پست شغلی به {username} ارسال شد (اتوماتیک)\n"
+                            + (f"🔗 لینک: {link}" if link else f"🆔 شناسه: #{post.channel_msg_id}")
                         )
+                        await _notify_admins(ctx, note)
                     else:
                         # Fallback to sending raw text if we can't forward
                         text = (post.text or "") or (post.caption or "")
                         if text:
                             await ctx.bot.send_message(chat_id=user.chat_id, text=text[:4000])
                             username = f"@{user.username}" if getattr(user, "username", None) else f"user_id {user.user_id}"
-                            await _notify_admins(
-                                ctx,
-                                f"📨 متن پست شغلی #{post.channel_msg_id} به {username} ارسال شد (اتوماتیک)"
+                            link = await _build_telegram_post_link(ctx, post.channel_chat_id, post.channel_msg_id)
+                            note = (
+                                f"📨 متن پست شغلی به {username} ارسال شد (اتوماتیک)\n"
+                                + (f"🔗 لینک: {link}" if link else f"🆔 شناسه: #{post.channel_msg_id}")
                             )
+                            await _notify_admins(ctx, note)
 
                     # Record delivery
                     db.add(Delivery(user_id=user.user_id, channel_msg_id=post.channel_msg_id))
