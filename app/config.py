@@ -25,11 +25,14 @@ def import_config(name, default=None, class_type=str, env_path=".env"):
 
 class Settings:
     TELEGRAM_BOT_TOKEN: str = import_config("TELEGRAM_BOT_TOKEN", default="", class_type=str)
-    TELEGRAM_BOT_TOKEN: str = import_config("TELEGRAM_BOT_TOKEN", default="", class_type=str)
     CHANNEL_ID: str = import_config("CHANNEL_ID", default="", class_type=str)
     DATABASE_URL: str = import_config("DATABASE_URL", default="sqlite:///./cejob.db", class_type=str)
     EMBED_MODEL: str = import_config("EMBED_MODEL", default="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", class_type=str)
     SIM_THRESHOLD: float = import_config("SIM_THRESHOLD", default="0.62", class_type=float)
     ADMIN_IDS: list = [int(x) for x in import_config("ADMIN_IDS", default="", class_type=list)]
+    OPENAI_API_KEY: str = import_config("OPENAI_API_KEY", default="", class_type=str)
+    LLM_BASE_URL: str = import_config("LLM_BASE_URL", default="https://api.metisai.ir/openai/v1", class_type=str)
+    LLM_MODEL_NAME: str = import_config("LLM_MODEL_NAME", default="gpt-4o-mini", class_type=str)
+
 
 settings = Settings()

@@ -20,8 +20,9 @@ def migrate_database():
         
         log.info("✅ Database migration completed successfully!")
         log.info("New classification fields added to channel_posts table:")
-        log.info("  - employment_type, job_function, industry")
-        log.info("  - seniority_level, work_location, job_specialization")
+        log.info("  - employment_type, position, industry")
+        log.info("  - seniority_level, work_location")
+        log.info("  - years_experience")
         log.info("  - skills_technologies, bonuses, health_insurance")
         log.info("  - stock_options, work_schedule, company_size")
         log.info("  - company_name, is_classified")

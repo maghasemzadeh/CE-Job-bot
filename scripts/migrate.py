@@ -34,7 +34,7 @@ class MigrationRunner:
         
         for file_path in sorted(migration_files):
             migration_name = Path(file_path).stem
-            if migration_name.startswith(("0001_", "0002_", "0003_")):
+            if migration_name.startswith("000"):
                 migrations.append((migration_name, file_path))
         
         return migrations

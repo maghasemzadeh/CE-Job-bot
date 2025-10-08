@@ -3,3 +3,4 @@ cejob.db
 **/__pycache__/**
 **/venv/** 
 .env
+resumes/**

@@ -4,10 +4,11 @@ Job position classification using LangChain and Pydantic
 
 from pydantic import BaseModel, Field
 from typing import Optional
-from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI  
 from langchain.prompts import PromptTemplate
 from langchain.output_parsers import PydanticOutputParser
 import logging
+from app.config import settings
 
 log = logging.getLogger(__name__)
 
@@ -16,19 +17,19 @@ class JobPositionClassification(BaseModel):
     employment_type: Optional[str] = Field(None, description="Type of employment")
     
     # Job Function or Department
-    job_function: Optional[str] = Field(None, description="Primary job function or department")
+    position: Optional[str] = Field(None, description="Primary job function or department")
     
     # Industry
     industry: Optional[str] = Field(None, description="Industry sector")
     
     # Seniority Level
     seniority_level: Optional[str] = Field(None, description="Required experience level")
+    # Numeric years of experience required if explicitly mentioned (e.g., 3-5 -> 3)
+    years_experience: Optional[int] = Field(None, description="Minimum years of experience required if mentioned")
     
     # Work Location
     work_location: Optional[str] = Field(None, description="Work location type")
     
-    # Job Specialization
-    job_specialization: Optional[str] = Field(None, description="Specific job specialization")
     
     # Skills/Technologies
     skills_technologies: Optional[str] = Field(None, description="Required skills and technologies")
@@ -48,8 +49,18 @@ class JobPositionClassification(BaseModel):
     company_name: Optional[str] = Field(None, description="Name of the company offering the job position")
 
 class JobClassifier:
-    def __init__(self, model_name: str = "gpt-3.5-turbo"):
-        self.llm = ChatOpenAI(model=model_name, temperature=0)
+    def __init__(self, model_name: str = "gpt-4o-mini"):
+        if not settings.OPENAI_API_KEY:
+            raise ValueError("OPENAI_API_KEY is not configured")
+
+        self.llm = ChatOpenAI(
+            model=model_name,
+            temperature=0,
+            base_url=settings.LLM_BASE_URL,
+            api_key=settings.OPENAI_API_KEY,
+            timeout=60,
+            max_retries=2,
+        )
         self.parser = PydanticOutputParser(pydantic_object=JobPositionClassification)
         
         self.prompt = PromptTemplate(
@@ -63,12 +74,12 @@ Job Posting Text:
 
 Please classify this job posting based on the text content. If information is not explicitly mentioned or unclear, set the field to null.
 Focus on extracting:
-- Employment type (Full-time, Part-time, Contract, Internship, Freelance)
-- Job function (Backend Developer, Frontend Developer, Full-stack Developer, DevOps Engineer, Software Engineer, Data Scientist, Machine Learning Engineer, AI Specialist, Data Engineer, Cloud Engineer, Quality Assurance (QA) Engineer, Security Engineer)
+- Employment type (Full-time, Part-time, Internship, Freelance)
+- Position (Backend Developer, Frontend Developer, Full-stack Developer, DevOps Engineer, Software Engineer, Data Scientist, Machine Learning Engineer, AI Specialist, Data Engineer, Cloud Engineer, Quality Assurance (QA) Engineer, Security Engineer)
 - Industry (Technology, Software, IT, Fintech, Cybersecurity)
 - Seniority level (Entry-level, Mid-level, Senior, Lead, Manager, Director, VP)
+- Minimum years of experience if a numeric value is explicitly mentioned (e.g., "3+ years", "2 years", "3-5 years"). If a range is provided, return the minimum. If not present, set to null. Provide only an integer like 3.
 - Work location (On-site, Remote, Hybrid)
-- Job specialization (Software Developer, Backend Developer, Frontend Developer, Full-stack Developer, Mobile App Developer, Data Scientist, Data Engineer, DevOps Engineer, Machine Learning Engineer, AI Specialist, Security Engineer, Cloud Engineer)
 - Skills/technologies mentioned (Python, JavaScript, Java, C++, Go, Ruby, PHP, Rust, SQL, NoSQL, React, Angular, Node.js, Django, Flask, Spring Boot, Vue.js, TensorFlow, PyTorch, Kubernetes, Docker, AWS, Azure, Google Cloud, Machine Learning, Data Analysis)
 - Benefits (bonuses, health_insurance, stock_options)
 - Work schedule (Flexible Hours, Fixed Hours, Shift work)
@@ -94,10 +105,10 @@ Return the classification in the specified JSON format.
             return result
             
         except Exception as e:
-            log.error(f"Error classifying job posting: {e}")
+            log.error(f"Error classifying job posting: {e!r}")
             return JobPositionClassification()
 
 # Create a global instance
-job_classifier = JobClassifier()
+job_classifier = JobClassifier(model_name=settings.LLM_MODEL_NAME)
 
 

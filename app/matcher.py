@@ -4,10 +4,9 @@ import re
 from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
-import openai  # Correct import for OpenAI API
 from sklearn.metrics.pairwise import cosine_similarity
 import os
-from app.config import import_config
+from app.config import settings
 
 def norm(text: str) -> str:
     t = text.lower()
@@ -18,26 +17,37 @@ def norm(text: str) -> str:
 
 class KeywordExtractor:
     def __init__(self, model_name: str):
-        # Set the OpenAI API key directly from environment variable
-        openai.api_key = import_config("OPENAI_API_KEY")  # This assumes you have the key set in your environment
-        print(f"OPENAI_API_KEY: {openai.api_key}")
-        if not openai.api_key:
-            raise ValueError("OPENAI_API_KEY environment variable is not set!")
+        if not settings.OPENAI_API_KEY:
+            raise ValueError("OPENAI_API_KEY is not configured")
 
-        self.llm = ChatOpenAI()  # Assuming this is your desired model
+        self.llm = ChatOpenAI(
+            model=model_name,
+            temperature=0,
+            base_url=settings.LLM_BASE_URL,
+            api_key=settings.OPENAI_API_KEY,
+        )
+
+        self.prompt = PromptTemplate(
+            input_variables=["job_description"],
+            template=(
+                "Extract relevant keywords for a job description from the following text. "
+                "Return a concise, comma-separated list of keywords only.\n\n"
+                "{job_description}"
+            ),
+        )
+        self.chain = LLMChain(llm=self.llm, prompt=self.prompt)
 
     def extract_keywords(self, text: str) -> List[str]:
-        prompt = (f"Extract relevant keywords for a job description from the following text:"
-                  f"{text})"
-                  f"Keywords:")
-        response = self.llm.responses.create(
-            model="gpt-5-nano",  # You can update the model name if needed
-            input=prompt
-        ).output_text
+        """Extracts keywords from job description text"""
+        prompt = f"Extract relevant keywords for a job description from the following text:\n{text}\nKeywords:"
+        
+        # Invoke the LLM chain to get a response
+        response = self.chain.run({"job_description": text}).strip()
+
         print("Raw LLM response:", repr(response))  # Debug print
 
         # Try to extract keywords from various possible formats
-        lines = [line.strip() for line in response.strip().splitlines() if line.strip()]
+        lines = [line.strip() for line in response.splitlines() if line.strip()]
         keywords = []
 
         for line in lines:
@@ -107,7 +117,7 @@ class PreferenceMatcher:
 
 # Create instances for easy importing
 # Only create instance if OpenAI API key is available
-if import_config("OPENAI_API_KEY"):
+if settings.OPENAI_API_KEY:
     keyword_extractor = KeywordExtractor("gpt-5")
 else:
     # Create a dummy instance for testing

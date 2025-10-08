@@ -27,6 +27,7 @@ def up():
         log.info("✅ Migration 0003 applied successfully!")
         log.info("Added JSON field to channel_posts:")
         log.info("  - classification_data: Complete JobPositionClassification data as JSON")
+        log.info("Note: Future migrations may add new scalar columns like years_experience for indexing.")
         
         # Verify the migration
         with SessionLocal() as db:

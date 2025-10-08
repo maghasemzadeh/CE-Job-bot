@@ -44,20 +44,21 @@ def test_openai_connection():
     
     # Test 1: Direct OpenAI API call
     try:
+
         log.info("Testing direct OpenAI API call...")
-        import openai
+
+        from openai import OpenAI   
         
-        client = openai.OpenAI(api_key=api_key)
+        client = OpenAI(api_key=api_key, base_url=Settings.LLM_BASE_URL)
         
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o-mini",
             messages=[
-                {"role": "user", "content": "Hello! Please respond with 'API connection successful'"}
+                {"role": "user", "content": "Hello world"}
             ],
-            max_tokens=50,
-            temperature=0
+            max_tokens=100
         )
-        
+
         log.info(f"✅ Direct OpenAI API call successful!")
         log.info(f"Response: {response.choices[0].message.content}")
         
@@ -71,9 +72,10 @@ def test_openai_connection():
         from langchain_openai import ChatOpenAI
         
         llm = ChatOpenAI(
-            model="gpt-3.5-turbo",
+            model="gpt-4o-mini",
             api_key=api_key,
-            temperature=0
+            temperature=0,
+            base_url=Settings.LLM_BASE_URL
         )
         
         response = llm.invoke("Hello! Please respond with 'LangChain connection successful'")
