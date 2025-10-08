@@ -640,9 +640,6 @@ async def match_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ChannelPost.posted_at >= thirty_days_ago,
             ChannelPost.is_classified == True
         ).order_by(ChannelPost.posted_at.desc()).limit(200).all()
-        print('posts', len(posts))
-        posts2 = db.query(ChannelPost).order_by(ChannelPost.posted_at.desc()).limit(200).all()
-        print('posts2', len(posts2))
         matches = []
         for p in posts:
             print(f"trying to match post {p.channel_msg_id}")
@@ -743,7 +740,7 @@ async def _notify_matched_users_for_post(ctx: ContextTypes.DEFAULT_TYPE, post: C
                 continue
 
             overlap = _skills_overlap_ratio(preferred.skills_technologies, post.skills_technologies)
-            if overlap < 0.5:
+            if preferred.skills_technologies and overlap < 0.5:
                 continue
 
             try:
