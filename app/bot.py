@@ -626,6 +626,36 @@ def _seniority_rank(value: str | None) -> int:
     return order.get(key, None)
 
 
+def _is_position_match(preferred: PreferredJobPosition, post: ChannelPost) -> bool:
+    """Check if a job post matches user preferences"""
+    def eq(a, b):
+        if a is None or str(a).strip() == "":
+            return True
+        return (str(a).strip().lower() == str(b or "").strip().lower())
+
+    # Basic matching criteria
+    if not eq(preferred.employment_type, post.employment_type):
+        return False
+    if not eq(preferred.position, post.position):
+        return False
+    if not eq(preferred.work_schedule, post.work_schedule):
+        return False
+
+    # Seniority level check - post level should not be higher than user's preferred level
+    user_rank = _seniority_rank(preferred.seniority_level)
+    post_rank = _seniority_rank(post.seniority_level)
+    if user_rank is not None and post_rank is not None and post_rank > user_rank:
+        return False
+
+    # Skills overlap check - at least 50% overlap required (only if user has skills specified)
+    if preferred.skills_technologies:
+        overlap = _skills_overlap_ratio(preferred.skills_technologies, post.skills_technologies)
+        if overlap < 0.5:
+            return False
+
+    return True
+
+
 async def match_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     await update.message.reply_text("در حال جستجوی موقعیت‌های شغلی مرتبط با ترجیحات شما...")
@@ -643,33 +673,10 @@ async def match_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         matches = []
         for p in posts:
             print(f"trying to match post {p.channel_msg_id}")
-            def eq(a, b):
-                if a is None or str(a).strip() == "":
-                    return True
-                return (str(a).strip().lower() == str(b or "").strip().lower())
-
-            if not eq(preferred.employment_type, p.employment_type):
-                print(f"employment_type mismatch: {preferred.employment_type} != {p.employment_type}")      
-                continue
-            if not eq(preferred.position, p.position):
-                print(f"position mismatch: {preferred.position} != {p.position}")
-                continue
-            if not eq(preferred.work_schedule, p.work_schedule):
-                print(f"work_schedule mismatch: {preferred.work_schedule} != {p.work_schedule}")
-                continue
-
-            user_rank = _seniority_rank(preferred.seniority_level)
-            post_rank = _seniority_rank(p.seniority_level)
-            if user_rank and post_rank and post_rank > user_rank:
-                print(f"seniority_level mismatch: {preferred.seniority_level} != {p.seniority_level}")
-                continue
-
-            overlap = _skills_overlap_ratio(preferred.skills_technologies, p.skills_technologies)
-            if overlap < 0.5:
-                print(f"skills_technologies mismatch: {preferred.skills_technologies} != {p.skills_technologies}")
-                continue
-
-            matches.append(p)
+            if _is_position_match(preferred, p):
+                matches.append(p)
+            else:
+                print(f"post {p.channel_msg_id} did not match user preferences")
 
     if not matches:
         await update.message.reply_text("هیچ موقعیت شغلی مطابقی در پست‌های اخیر یافت نشد.")
@@ -721,26 +728,8 @@ async def _notify_matched_users_for_post(ctx: ContextTypes.DEFAULT_TYPE, post: C
         )
 
         for preferred, user in pairs:
-            def eq(a, b):
-                if a is None or str(a).strip() == "":
-                    return True
-                return (str(a).strip().lower() == str(b or "").strip().lower())
-
-            # Basic matching similar to /match_positions
-            if not eq(preferred.employment_type, post.employment_type):
-                continue
-            if not eq(preferred.position, post.position):
-                continue
-            if not eq(preferred.work_schedule, post.work_schedule):
-                continue
-
-            user_rank = _seniority_rank(preferred.seniority_level)
-            post_rank = _seniority_rank(post.seniority_level)
-            if post_rank > user_rank:
-                continue
-
-            overlap = _skills_overlap_ratio(preferred.skills_technologies, post.skills_technologies)
-            if preferred.skills_technologies and overlap < 0.5:
+            # Use shared matching logic
+            if not _is_position_match(preferred, post):
                 continue
 
             try:
