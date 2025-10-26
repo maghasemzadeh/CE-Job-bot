@@ -4,3 +4,6 @@ cejob.db
 **/venv/** 
 .env
 resumes/**
+.DS_Store
+bot.log
+connection_test.log

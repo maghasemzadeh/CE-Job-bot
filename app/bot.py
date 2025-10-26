@@ -1,16 +1,19 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler, ConversationHandler
 from datetime import datetime, timedelta
+from typing import Tuple
 import logging
 import asyncio
 import os
 from pathlib import Path
 import hashlib
 import re
+import time
+import requests
 
 log = logging.getLogger(__name__)
 
-from app.matcher import keyword_extractor, PreferenceMatcher
+from app.matcher import keyword_extractor, PreferenceMatcher, match_resume_with_job_embedding
 from app.db import SessionLocal
 from app.models import User, Preference, Delivery, ChannelPost, PreferredJobPosition
 from app.config import settings
@@ -382,8 +385,22 @@ async def fetch_channel_posts(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"خطا در دریافت پست‌های کانال: {str(e)}")
 
 def build_app():
+    """Build Telegram bot application with comprehensive logging"""
+    log.info("Building Telegram bot application...")
+    start_time = time.time()
+    
+    # Test Telegram bot token connectivity
+    _test_telegram_connectivity()
+    
     async def post_init(app):
+        log.info("Running post-initialization tasks...")
         try:
+            # Test bot connection
+            bot_info = await app.bot.get_me()
+            log.info(f"✅ Bot connected successfully: @{bot_info.username} ({bot_info.first_name})")
+            log.info(f"Bot ID: {bot_info.id}")
+            
+            # Set bot commands
             await app.bot.set_my_commands([
                 BotCommand("start", "شروع بات"),
                 BotCommand("help", "نمایش راهنما و دستورات موجود"),
@@ -394,40 +411,81 @@ def build_app():
                 BotCommand("deactivate_new_positions", "غیرفعال‌سازی دریافت مشاغل مطابق جدید"),
                 BotCommand("stop", "توقف دریافت به‌روزرسانی‌ها"),
             ])
+            log.info("✅ Bot commands set successfully")
+            
         except Exception as e:
-            log.warning(f"Failed to set bot commands: {e}")
+            log.error(f"❌ Post-initialization failed: {e}")
+            log.error(f"Error type: {type(e).__name__}")
 
-    application = ApplicationBuilder().token(settings.TELEGRAM_BOT_TOKEN).post_init(post_init).build()
+    try:
+        application = ApplicationBuilder().token(settings.TELEGRAM_BOT_TOKEN).post_init(post_init).build()
+        
+        # Conversation handler for admin keyword extraction
+        keyword_extraction_conv = ConversationHandler(
+            entry_points=[CommandHandler("extract_keywords", extract_keywords)],
+            states={
+                EXTRACTING_KEYWORDS: [
+                    CommandHandler("extract_keywords_end", extract_keywords_end),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, collect_forwarded_message),
+                ],
+            },
+            fallbacks=[CommandHandler("extract_keywords_end", extract_keywords_end)],
+        )
+        
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("stop", stop))
+        application.add_handler(CommandHandler("fetch_posts", fetch_channel_posts))
+        application.add_handler(CommandHandler("help", help_command))
+        application.add_handler(keyword_extraction_conv)
+        application.add_handler(CommandHandler("update_my_position", update_my_position))
+        application.add_handler(CommandHandler("my_position", my_position))
+        application.add_handler(CommandHandler("match_positions", match_positions))
+        application.add_handler(CommandHandler("activate_new_positions", activate_new_positions))
+        application.add_handler(CommandHandler("deactivate_new_positions", deactivate_new_positions))
+        application.add_handler(CallbackQueryHandler(select_keyword))
+        # Handle channel posts (bot must be admin in the channel) BEFORE generic text handlers
+        application.add_handler(MessageHandler(filters.ChatType.CHANNEL, on_channel_post))
+        # Private chat-only handlers
+        application.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.Document.PDF, handle_position_document))
+        application.add_handler(MessageHandler(filters.ChatType.PRIVATE & (filters.TEXT & ~filters.COMMAND), handle_text_messages))
+        
+        build_time = time.time() - start_time
+        log.info(f"✅ Telegram bot application built successfully in {build_time:.2f}s")
+        return application
+    except Exception as e:
+        build_time = time.time() - start_time
+        log.error(f"❌ Failed to build Telegram bot application after {build_time:.2f}s: {e}")
+        raise
+
+def _test_telegram_connectivity():
+    """Test Telegram bot API connectivity"""
+    log.info("Testing Telegram bot API connectivity...")
+    start_time = time.time()
     
-    # Conversation handler for admin keyword extraction
-    keyword_extraction_conv = ConversationHandler(
-        entry_points=[CommandHandler("extract_keywords", extract_keywords)],
-        states={
-            EXTRACTING_KEYWORDS: [
-                CommandHandler("extract_keywords_end", extract_keywords_end),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_forwarded_message),
-            ],
-        },
-        fallbacks=[CommandHandler("extract_keywords_end", extract_keywords_end)],
-    )
-    
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("stop", stop))
-    application.add_handler(CommandHandler("fetch_posts", fetch_channel_posts))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(keyword_extraction_conv)
-    application.add_handler(CommandHandler("update_my_position", update_my_position))
-    application.add_handler(CommandHandler("my_position", my_position))
-    application.add_handler(CommandHandler("match_positions", match_positions))
-    application.add_handler(CommandHandler("activate_new_positions", activate_new_positions))
-    application.add_handler(CommandHandler("deactivate_new_positions", deactivate_new_positions))
-    application.add_handler(CallbackQueryHandler(select_keyword))
-    # Handle channel posts (bot must be admin in the channel) BEFORE generic text handlers
-    application.add_handler(MessageHandler(filters.ChatType.CHANNEL, on_channel_post))
-    # Private chat-only handlers
-    application.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.Document.PDF, handle_position_document))
-    application.add_handler(MessageHandler(filters.ChatType.PRIVATE & (filters.TEXT & ~filters.COMMAND), handle_text_messages))
-    return application
+    try:
+        # Test basic connectivity to Telegram API
+        test_url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/getMe"
+        response = requests.get(test_url, timeout=10)
+        response_time = time.time() - start_time
+        
+        log.info(f"Telegram API connectivity test - Status: {response.status_code}, Time: {response_time:.2f}s")
+        
+        if response.status_code == 200:
+            bot_info = response.json()
+            if bot_info.get('ok'):
+                log.info("✅ Telegram bot API connectivity test passed")
+                log.info(f"Bot info: {bot_info.get('result', {})}")
+            else:
+                log.warning(f"⚠️ Telegram API returned error: {bot_info}")
+        else:
+            log.warning(f"⚠️ Telegram API returned status {response.status_code}: {response.text[:200]}")
+            
+    except requests.exceptions.ConnectionError as e:
+        log.error(f"❌ Telegram API connection failed: {e}")
+    except requests.exceptions.Timeout as e:
+        log.error(f"❌ Telegram API request timeout: {e}")
+    except Exception as e:
+        log.error(f"❌ Telegram API connectivity test failed: {e}")
 
 
 async def ensure_user_record(update: Update):
@@ -698,6 +756,35 @@ def _seniority_rank(value: str | None) -> int:
     return order.get(key, None)
 
 
+def _get_user_resume_text(user_id: int, db) -> str:
+    """Get resume text for a user from database or file"""
+    try:
+        user = db.query(User).filter(User.user_id == user_id).first()
+        if not user:
+            return ""
+        
+        # Try to get text from preferred_position_text first
+        preferred = db.query(PreferredJobPosition).filter(PreferredJobPosition.user_id == user_id).first()
+        if preferred and preferred.preferred_position_text:
+            return preferred.preferred_position_text
+        
+        # If resume file path exists, try to read it
+        if user.resume_file_path and os.path.exists(user.resume_file_path):
+            try:
+                loader = PyPDFLoader(user.resume_file_path)
+                pages = loader.load()
+                text_content = "\n\n".join(page.page_content for page in pages)
+                return text_content
+            except Exception as e:
+                log.warning(f"Failed to load resume from file {user.resume_file_path}: {e}")
+                return ""
+        
+        return ""
+    except Exception as e:
+        log.error(f"Error getting resume text: {e}")
+        return ""
+
+
 def _is_position_match(preferred: PreferredJobPosition, post: ChannelPost) -> bool:
     """Check if a job post matches user preferences, with detailed debug prints for mismatches"""
     def eq(a, b):
@@ -749,6 +836,42 @@ def _is_position_match(preferred: PreferredJobPosition, post: ChannelPost) -> bo
     return True
 
 
+def _is_position_match_with_embedding(preferred: PreferredJobPosition, post: ChannelPost, db) -> Tuple[bool, float, str]:
+    """
+    Check if a job post matches user preferences using both old algorithm and embedding-based matching
+    Returns Tuple of (matches, score, explanation)
+    """
+    # First check with old algorithm
+    old_match = _is_position_match(preferred, post)
+    
+    # Get resume text and job text
+    user = db.query(User).filter(User.user_id == preferred.user_id).first()
+    resume_text = preferred.skills_technologies or ""
+    job_text = (post.text or "") or (post.caption or "")
+    
+    # Use the skills/technologies from the job post for embedding matching
+    skills_text = post.skills_technologies or ""
+    threshold = 0.7
+    if resume_text and (job_text or skills_text):
+        # Try embedding matching
+        try:
+            embedding_score, explanation = match_resume_with_job_embedding(
+                resume_text=resume_text,
+                job_text=skills_text if skills_text else job_text,
+                threshold=threshold
+            )
+        except Exception as e:
+            log.error(f"Error in embedding matching: {e}")
+            embedding_score, explanation = 0.0, "خطا در محاسبه تطابق"
+    else:
+        embedding_score, explanation = 0.0, "متن کافی برای محاسبه تطابق موجود نیست"
+    
+    # Combine old and new matching: must pass old match AND have embedding score >= 0.5
+    final_match = embedding_score >= threshold
+    
+    return final_match, embedding_score, explanation
+
+
 async def match_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     await update.message.reply_text("در حال جستجوی موقعیت‌های شغلی مرتبط با ترجیحات شما...")
@@ -763,34 +886,47 @@ async def match_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ChannelPost.posted_at >= thirty_days_ago,
             ChannelPost.is_classified == True
         ).order_by(ChannelPost.posted_at.desc()).limit(200).all()
+        
         matches = []
         for p in posts:
             print(f"trying to match post {p.channel_msg_id}")
-            if _is_position_match(preferred, p):
-                matches.append(p)
+            is_match, score, explanation = _is_position_match_with_embedding(preferred, p, db)
+            if is_match:
+                matches.append((p, score, explanation))
             else:
-                print(f"post {p.channel_msg_id} did not match user preferences")
+                print(f"post {p.channel_msg_id} did not match user preferences with score of {score}")
 
     if not matches:
         await update.message.reply_text("هیچ موقعیت شغلی مطابقی در پست‌های اخیر یافت نشد.")
         return
 
     sent = 0
-    for p in matches[:10]:
+    for p, score, explanation in sorted(matches, key=lambda x: x[1], reverse=True)[:10]:
         try:
             if p.channel_chat_id:
+                # Forward the post
                 await ctx.bot.forward_message(
                     chat_id=update.effective_chat.id,
                     from_chat_id=p.channel_chat_id,
                     message_id=p.channel_msg_id,
                 )
                 sent += 1
+                
+                # Send score and explanation
+                score_message = f"📊 <b>امتیاز تطابق:</b> {int(score * 100)}%\n\n{explanation}"
+                await ctx.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=score_message,
+                    parse_mode="HTML"
+                )
+                
                 # Admin notification about delivery
                 user = update.effective_user
                 username = f"@{user.username}" if user.username else f"user_id {user.id}"
                 link = await _build_telegram_post_link(ctx, p.channel_chat_id, p.channel_msg_id)
                 note = (
                     f"📨 پست شغلی به {username} ارسال شد (جستجوی دستی)\n"
+                    + f"📊 امتیاز: {int(score * 100)}%\n"
                     + (f"🔗 لینک: {link}" if link else f"🆔 شناسه: #{p.channel_msg_id}")
                 )
                 await _notify_admins(ctx, note)
@@ -799,12 +935,16 @@ async def match_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 text = (p.text or "") or (p.caption or "")
                 if text:
                     await update.message.reply_text(text[:4000])
+                    # Send score and explanation
+                    score_message = f"📊 <b>امتیاز تطابق:</b> {int(score * 100)}%\n\n{explanation}"
+                    await update.message.reply_text(score_message, parse_mode="HTML")
                     sent += 1
                     user = update.effective_user
                     username = f"@{user.username}" if user.username else f"user_id {user.id}"
                     link = await _build_telegram_post_link(ctx, p.channel_chat_id, p.channel_msg_id)
                     note = (
                         f"📨 متن پست شغلی به {username} ارسال شد (جستجوی دستی)\n"
+                        + f"📊 امتیاز: {int(score * 100)}%\n"
                         + (f"🔗 لینک: {link}" if link else f"🆔 شناسه: #{p.channel_msg_id}")
                     )
                     await _notify_admins(ctx, note)
@@ -814,6 +954,8 @@ async def match_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 text = (p.text or "") or (p.caption or "")
                 if text:
                     await update.message.reply_text(text[:4000])
+                    score_message = f"📊 <b>امتیاز تطابق:</b> {int(score * 100)}%\n\n{explanation}"
+                    await update.message.reply_text(score_message, parse_mode="HTML")
                     sent += 1
             except Exception as e2:
                 log.warning(f"Also failed to send text fallback: {e2}")
@@ -838,8 +980,10 @@ async def _notify_matched_users_for_post(ctx: ContextTypes.DEFAULT_TYPE, post: C
         )
 
         for preferred, user in pairs:
-            # Use shared matching logic
-            if not _is_position_match(preferred, post):
+            # Use the new embedding-based matching logic
+            is_match, score, explanation = _is_position_match_with_embedding(preferred, post, db)
+            
+            if not is_match:
                 continue
 
             try:
@@ -850,11 +994,21 @@ async def _notify_matched_users_for_post(ctx: ContextTypes.DEFAULT_TYPE, post: C
                             from_chat_id=post.channel_chat_id,
                             message_id=post.channel_msg_id,
                         )
+                        
+                        # Send score and explanation
+                        score_message = f"📊 <b>امتیاز تطابق:</b> {int(score * 100)}%\n\n{explanation}"
+                        await ctx.bot.send_message(
+                            chat_id=user.chat_id,
+                            text=score_message,
+                            parse_mode="HTML"
+                        )
+                        
                         # Notify admins for auto-delivery (forward)
                         username = f"@{user.username}" if getattr(user, "username", None) else f"user_id {user.user_id}"
                         link = await _build_telegram_post_link(ctx, post.channel_chat_id, post.channel_msg_id)
                         note = (
                             f"📨 پست شغلی به {username} ارسال شد (اتوماتیک)\n"
+                            + f"📊 امتیاز: {int(score * 100)}%\n"
                             + (f"🔗 لینک: {link}" if link else f"🆔 شناسه: #{post.channel_msg_id}")
                         )
                         await _notify_admins(ctx, note)
@@ -863,10 +1017,18 @@ async def _notify_matched_users_for_post(ctx: ContextTypes.DEFAULT_TYPE, post: C
                         text = (post.text or "") or (post.caption or "")
                         if text:
                             await ctx.bot.send_message(chat_id=user.chat_id, text=text[:4000])
+                            # Send score and explanation
+                            score_message = f"📊 <b>امتیاز تطابق:</b> {int(score * 100)}%\n\n{explanation}"
+                            await ctx.bot.send_message(
+                                chat_id=user.chat_id,
+                                text=score_message,
+                                parse_mode="HTML"
+                            )
                             username = f"@{user.username}" if getattr(user, "username", None) else f"user_id {user.user_id}"
                             link = await _build_telegram_post_link(ctx, post.channel_chat_id, post.channel_msg_id)
                             note = (
                                 f"📨 متن پست شغلی به {username} ارسال شد (اتوماتیک)\n"
+                                + f"📊 امتیاز: {int(score * 100)}%\n"
                                 + (f"🔗 لینک: {link}" if link else f"🆔 شناسه: #{post.channel_msg_id}")
                             )
                             await _notify_admins(ctx, note)
