@@ -1,4 +1,3 @@
-from sentence_transformers import SentenceTransformer
 from typing import List, Tuple
 import re
 from langchain.chains import LLMChain
