@@ -318,15 +318,15 @@ async def handle_text_messages(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Handle all text messages in private chats - route to appropriate handler"""
     if not update.message or not update.message.text:
         return
-    # If we're waiting for text after /update_my_position, route to that handler
+    # If we're waiting for text after /update_my_resume, route to that handler
     if ctx.user_data.get("awaiting_position_update"):
         await handle_position_text_if_waiting(update, ctx)
         return
     # Otherwise, guide the user to commands
     help_hint = (
         "لطفاً از دستورات برای تعامل با بات استفاده کنید:\n"
-        "• /update_my_position – تنظیم یا به‌روزرسانی موقعیت شغلی مورد نظر\n"
-        "• /my_position – مشاهده تنظیمات ذخیره شده\n"
+        "• /update_my_resume – تنظیم یا به‌روزرسانی موقعیت شغلی مورد نظر\n"
+        "• /my_resume – مشاهده تنظیمات ذخیره شده\n"
         "• /help – مشاهده تمام دستورات و نحوه استفاده"
     )
     await help_command(update, ctx)
@@ -338,19 +338,19 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "🤖 <b>به بات شغلی CE خوش آمدید!</b>\n\n"
         "📋 <b>چگونه کار می‌کند:</b>\n"
         "1️⃣ <b>تنظیم ترجیحات شغلی:</b>\n"
-        "   • با زدن دستور /update_my_position می‌توانید فایل PDF رزومه خود را آپلود کنید، یا\n"
+        "   • با زدن دستور /update_my_resume می‌توانید فایل PDF رزومه خود را آپلود کنید، یا\n"
         "   • نوع شغل مورد نظرتان را به صورت متن بفرستید\n\n"
         "2️⃣ <b>جستجو در مشاغل اخیر:</b>\n"
-        "   • از دستور /match_positions استفاده کنید\n"
+        "   • از دستور /match_last_month_positions استفاده کنید\n"
         "   • مشاغل مرتبط با ترجیحات شما در یک ماه اخیر را می‌بینید\n\n"
         "3️⃣ <b>دریافت مشاغل جدید:</b>\n"
         "   • به صورت خودکار مشاغل جدید مرتبط را دریافت می‌کنید\n"
-        "   • برای فعال‌سازی: /activate_new_positions\n"
-        "   • برای غیرفعال‌سازی: /deactivate_new_positions\n\n"
+        "   • برای فعال‌سازی: /follow_channel\n"
+        "   • برای غیرفعال‌سازی: /unfollow_channel\n\n"
         "📱 <b>دستورات مفید:</b>\n"
-        "• /my_position - مشاهده ترجیحات ذخیره شده\n"
+        "• /my_resume - مشاهده ترجیحات ذخیره شده\n"
         "• /help - راهنمای کامل\n\n"
-        "🚀 <b>شروع کنید:</b> /update_my_position"
+        "🚀 <b>شروع کنید:</b> /update_my_resume"
     )
     await update.message.reply_text(welcome_text, parse_mode="HTML")
     user = update.effective_user
@@ -405,11 +405,11 @@ def build_app():
             await app.bot.set_my_commands([
                 BotCommand("start", "شروع بات"),
                 BotCommand("help", "نمایش راهنما و دستورات موجود"),
-                BotCommand("update_my_position", "تنظیم/به‌روزرسانی موقعیت شغلی مورد نظر"),
-                BotCommand("my_position", "نمایش موقعیت شغلی ذخیره شده"),
-                BotCommand("match_positions", "جستجو و فوروارد مشاغل مطابق اخیر"),
-                BotCommand("activate_new_positions", "فعال‌سازی دریافت مشاغل مطابق جدید"),
-                BotCommand("deactivate_new_positions", "غیرفعال‌سازی دریافت مشاغل مطابق جدید"),
+                BotCommand("update_my_resume", "تنظیم/به‌روزرسانی موقعیت شغلی مورد نظر"),
+                BotCommand("my_resume", "نمایش موقعیت شغلی ذخیره شده"),
+                BotCommand("match_last_month_positions", "جستجو و فوروارد مشاغل مطابق اخیر"),
+                BotCommand("follow_channel", "فعال‌سازی دریافت مشاغل مطابق جدید"),
+                BotCommand("unfollow_channel", "غیرفعال‌سازی دریافت مشاغل مطابق جدید"),
                 BotCommand("stop", "توقف دریافت به‌روزرسانی‌ها"),
             ])
             log.info("✅ Bot commands set successfully")
@@ -438,11 +438,11 @@ def build_app():
         application.add_handler(CommandHandler("fetch_posts", fetch_channel_posts))
         application.add_handler(CommandHandler("help", help_command))
         application.add_handler(keyword_extraction_conv)
-        application.add_handler(CommandHandler("update_my_position", update_my_position))
-        application.add_handler(CommandHandler("my_position", my_position))
-        application.add_handler(CommandHandler("match_positions", match_positions))
-        application.add_handler(CommandHandler("activate_new_positions", activate_new_positions))
-        application.add_handler(CommandHandler("deactivate_new_positions", deactivate_new_positions))
+        application.add_handler(CommandHandler("update_my_resume", update_my_resume))
+        application.add_handler(CommandHandler("my_resume", my_resume))
+        application.add_handler(CommandHandler("match_last_month_positions", match_last_month_positions))
+        application.add_handler(CommandHandler("follow_channel", follow_channel))
+        application.add_handler(CommandHandler("unfollow_channel", unfollow_channel))
         application.add_handler(CallbackQueryHandler(select_keyword))
         # Handle channel posts (bot must be admin in the channel) BEFORE generic text handlers
         application.add_handler(MessageHandler(filters.ChatType.CHANNEL, on_channel_post))
@@ -511,7 +511,7 @@ async def ensure_user_record(update: Update):
         db.commit()
 
 
-async def update_my_position(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def update_my_resume(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await ensure_user_record(update)
     await update.message.reply_text(
         "جزئیات موقعیت شغلی مورد نظر خود را به صورت متن ارسال کنید، یا رزومه PDF آپلود کنید."
@@ -693,12 +693,12 @@ async def handle_position_text_if_waiting(update: Update, ctx: ContextTypes.DEFA
     )
 
 
-async def my_position(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def my_resume(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     with SessionLocal() as db:
         preferred = db.query(PreferredJobPosition).filter(PreferredJobPosition.user_id == user_id).first()
         if not preferred:
-            await update.message.reply_text("هنوز موقعیت شغلی مورد نظر تنظیم نشده است. از /update_my_position برای ارائه جزئیات استفاده کنید.")
+            await update.message.reply_text("هنوز موقعیت شغلی مورد نظر تنظیم نشده است. از /update_my_resume برای ارائه جزئیات استفاده کنید.")
             return
         await update.message.reply_text(_format_preferred_position_message(preferred), parse_mode="HTML")
 
@@ -708,13 +708,13 @@ async def help_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "<b>🤖 نحوه استفاده از بات شغلی CE</b>\n\n"
         "• /start – شروع بات\n"
         "• /help – نمایش این راهنما\n"
-        "• /update_my_position – ارسال متن یا آپلود رزومه PDF برای تنظیم/به‌روزرسانی ترجیحات\n"
-        "• /my_position – مشاهده موقعیت شغلی مورد نظر ذخیره شده\n"
-        "• /match_positions – جستجو و فوروارد مشاغل مطابق اخیر بر اساس ترجیحات شما\n"
-        "• /activate_new_positions – فعال‌سازی دریافت مشاغل مطابق جدید\n"
-        "• /deactivate_new_positions – غیرفعال‌سازی دریافت مشاغل مطابق جدید\n"
+        "• /update_my_resume – ارسال متن یا آپلود رزومه PDF برای تنظیم/به‌روزرسانی ترجیحات\n"
+        "• /my_resume – مشاهده موقعیت شغلی مورد نظر ذخیره شده\n"
+        "• /match_last_month_positions – جستجو و فوروارد مشاغل مطابق اخیر بر اساس ترجیحات شما\n"
+        "• /follow_channel – فعال‌سازی دریافت مشاغل مطابق جدید\n"
+        "• /unfollow_channel – غیرفعال‌سازی دریافت مشاغل مطابق جدید\n"
         "• /stop – توقف دریافت به‌روزرسانی‌ها\n\n"
-        "نکته: پس از /update_my_position، پیام بعدی شما (متن یا PDF) برای به‌روزرسانی ترجیحات استفاده خواهد شد."
+        "نکته: پس از /update_my_resume، پیام بعدی شما (متن یا PDF) برای به‌روزرسانی ترجیحات استفاده خواهد شد."
     )
     await update.message.reply_text(text, parse_mode="HTML")
 
@@ -901,13 +901,13 @@ async def _is_position_match_with_embedding(preferred: PreferredJobPosition, pos
         return final_match, embedding_score, basic_explanation
 
 
-async def match_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def match_last_month_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     await update.message.reply_text("در حال جستجوی موقعیت‌های شغلی مرتبط با ترجیحات شما...")
     with SessionLocal() as db:
         preferred = db.query(PreferredJobPosition).filter(PreferredJobPosition.user_id == user_id).first()
         if not preferred:
-            await update.message.reply_text("هنوز موقعیت شغلی مورد نظر ندارید. ابتدا از /update_my_position استفاده کنید.")
+            await update.message.reply_text("هنوز موقعیت شغلی مورد نظر ندارید. ابتدا از /update_my_resume استفاده کنید.")
             return
 
         thirty_days_ago = datetime.utcnow() - timedelta(days=30)
@@ -1171,7 +1171,7 @@ async def on_channel_post(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         log.warning(f"Failed notifying users for post {post.channel_msg_id}: {e}")
 
-async def activate_new_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def follow_channel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     with SessionLocal() as db:
         preferred = db.query(PreferredJobPosition).filter(PreferredJobPosition.user_id == user_id).first()
@@ -1185,7 +1185,7 @@ async def activate_new_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
     await update.message.reply_text("✅ پست‌های شغلی مطابق جدید را دریافت خواهید کرد.")
 
 
-async def deactivate_new_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def unfollow_channel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     with SessionLocal() as db:
         preferred = db.query(PreferredJobPosition).filter(PreferredJobPosition.user_id == user_id).first()
@@ -1196,4 +1196,4 @@ async def deactivate_new_positions(update: Update, ctx: ContextTypes.DEFAULT_TYP
             preferred.active = False
             db.add(preferred)
         db.commit()
-    await update.message.reply_text("🚫 پست‌های شغلی مطابق جدید را دریافت نخواهید کرد. از /activate_new_positions برای فعال‌سازی مجدد استفاده کنید.")
+    await update.message.reply_text("🚫 پست‌های شغلی مطابق جدید را دریافت نخواهید کرد. از /follow_channel برای فعال‌سازی مجدد استفاده کنید.")
