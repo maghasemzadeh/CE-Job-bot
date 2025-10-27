@@ -13,15 +13,17 @@ import requests
 
 log = logging.getLogger(__name__)
 
-from app.matcher import keyword_extractor, PreferenceMatcher, match_resume_with_job_embedding
+from app.matcher import PreferenceMatcher, match_resume_with_job_embedding
 from app.db import SessionLocal
 from app.models import User, Preference, Delivery, ChannelPost, PreferredJobPosition
 from app.config import settings
 
 from app.classification import job_classifier
+from app.langfuse_client import LangfuseSingleton
 log.info("Using OpenAI-based job classifier")
 
 matcher = PreferenceMatcher(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", threshold=0.62)
+langfuse_client = LangfuseSingleton()
 
 from telegram.constants import ChatType
 
@@ -785,6 +787,23 @@ def _get_user_resume_text(user_id: int, db) -> str:
         return ""
 
 
+async def _generate_match_explanation(resume_text: str, job_text: str) -> str:
+    """Generate detailed match explanation using Langfuse prompt"""
+    try:
+        # Use the Langfuse singleton to get the match explanation
+        explanation = langfuse_client.ask(
+            prompt_name="match-explanation",
+            resume_text=resume_text,
+            job_text=job_text,
+            temperature=0.5
+        )
+        return explanation
+    except Exception as e:
+        log.error(f"Error generating match explanation: {e}")
+        # Fallback to a simple explanation
+        return f"این موقعیت شغلی با مهارت‌ها و تجربیات شما همخوانی دارد. مهارت‌های کلیدی شما شامل {resume_text[:100]}... می‌باشد که با نیازهای این شغل مطابقت دارد."
+
+
 def _is_position_match(preferred: PreferredJobPosition, post: ChannelPost) -> bool:
     """Check if a job post matches user preferences, with detailed debug prints for mismatches"""
     def eq(a, b):
@@ -836,7 +855,7 @@ def _is_position_match(preferred: PreferredJobPosition, post: ChannelPost) -> bo
     return True
 
 
-def _is_position_match_with_embedding(preferred: PreferredJobPosition, post: ChannelPost, db) -> Tuple[bool, float, str]:
+async def _is_position_match_with_embedding(preferred: PreferredJobPosition, post: ChannelPost, db) -> Tuple[bool, float, str]:
     """
     Check if a job post matches user preferences using both old algorithm and embedding-based matching
     Returns Tuple of (matches, score, explanation)
@@ -846,30 +865,41 @@ def _is_position_match_with_embedding(preferred: PreferredJobPosition, post: Cha
     
     # Get resume text and job text
     user = db.query(User).filter(User.user_id == preferred.user_id).first()
-    resume_text = preferred.skills_technologies or ""
+    resume_skills = preferred.skills_technologies or ""
     job_text = (post.text or "") or (post.caption or "")
     
     # Use the skills/technologies from the job post for embedding matching
     skills_text = post.skills_technologies or ""
     threshold = 0.7
-    if resume_text and (job_text or skills_text):
+    if resume_skills and (job_text or skills_text):
         # Try embedding matching
         try:
-            embedding_score, explanation = match_resume_with_job_embedding(
-                resume_text=resume_text,
+            embedding_score, basic_explanation = match_resume_with_job_embedding(
+                resume_text=resume_skills,
                 job_text=skills_text if skills_text else job_text,
                 threshold=threshold
             )
         except Exception as e:
             log.error(f"Error in embedding matching: {e}")
-            embedding_score, explanation = 0.0, "خطا در محاسبه تطابق"
+            embedding_score, basic_explanation = 0.0, "خطا در محاسبه تطابق"
     else:
-        embedding_score, explanation = 0.0, "متن کافی برای محاسبه تطابق موجود نیست"
+        embedding_score, basic_explanation = 0.0, "متن کافی برای محاسبه تطابق موجود نیست"
     
     # Combine old and new matching: must pass old match AND have embedding score >= 0.5
     final_match = embedding_score >= threshold
     
-    return final_match, embedding_score, explanation
+    # Generate detailed explanation if it's a match
+
+    resume_text = _get_user_resume_text(user.user_id, db=db)
+    if final_match and resume_text and job_text:
+        try:
+            detailed_explanation = await _generate_match_explanation(resume_text, job_text)
+            return final_match, embedding_score, detailed_explanation
+        except Exception as e:
+            log.error(f"Error generating detailed explanation: {e}")
+            return final_match, embedding_score, basic_explanation
+    else:
+        return final_match, embedding_score, basic_explanation
 
 
 async def match_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -887,80 +917,85 @@ async def match_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ChannelPost.is_classified == True
         ).order_by(ChannelPost.posted_at.desc()).limit(200).all()
         
-        matches = []
+        sent = 0
+        total_checked = 0
+        total_posts = len(posts)
+        
+        # Send initial progress message
+        if total_posts > 0:
+            await update.message.reply_text(f"🔍 در حال بررسی {total_posts} پست شغلی...")
+        
         for p in posts:
+            total_checked += 1
             print(f"trying to match post {p.channel_msg_id}")
-            is_match, score, explanation = _is_position_match_with_embedding(preferred, p, db)
+            is_match, score, explanation = await _is_position_match_with_embedding(preferred, p, db)
+            
             if is_match:
-                matches.append((p, score, explanation))
+                try:
+                    if p.channel_chat_id:
+                        # Forward the post immediately
+                        await ctx.bot.forward_message(
+                            chat_id=update.effective_chat.id,
+                            from_chat_id=p.channel_chat_id,
+                            message_id=p.channel_msg_id,
+                        )
+                        sent += 1
+                        
+                        # Send score and explanation immediately
+                        score_message = f"📊 <b>امتیاز تطابق:</b> {int(score * 100)}%\n\n{explanation}"
+                        await ctx.bot.send_message(
+                            chat_id=update.effective_chat.id,
+                            text=score_message,
+                            parse_mode="HTML"
+                        )
+                        
+                        # Admin notification about delivery
+                        user = update.effective_user
+                        username = f"@{user.username}" if user.username else f"user_id {user.id}"
+                        link = await _build_telegram_post_link(ctx, p.channel_chat_id, p.channel_msg_id)
+                        note = (
+                            f"📨 پست شغلی به {username} ارسال شد (جستجوی دستی)\n"
+                            + f"📊 امتیاز: {int(score * 100)}%\n"
+                            + (f"🔗 لینک: {link}" if link else f"🆔 شناسه: #{p.channel_msg_id}")
+                        )
+                        await _notify_admins(ctx, note)
+                    else:
+                        # Fallback to sending raw text if we can't forward
+                        text = (p.text or "") or (p.caption or "")
+                        if text:
+                            await update.message.reply_text(text[:4000])
+                            # Send score and explanation immediately
+                            score_message = f"📊 <b>امتیاز تطابق:</b> {int(score * 100)}%\n\n{explanation}"
+                            await update.message.reply_text(score_message, parse_mode="HTML")
+                            sent += 1
+                            user = update.effective_user
+                            username = f"@{user.username}" if user.username else f"user_id {user.id}"
+                            link = await _build_telegram_post_link(ctx, p.channel_chat_id, p.channel_msg_id)
+                            note = (
+                                f"📨 متن پست شغلی به {username} ارسال شد (جستجوی دستی)\n"
+                                + f"📊 امتیاز: {int(score * 100)}%\n"
+                                + (f"🔗 لینک: {link}" if link else f"🆔 شناسه: #{p.channel_msg_id}")
+                            )
+                            await _notify_admins(ctx, note)
+                except Exception as e:
+                    log.warning(f"Failed to forward message {p.channel_msg_id}: {e}")
+                    try:
+                        text = (p.text or "") or (p.caption or "")
+                        if text:
+                            await update.message.reply_text(text[:4000])
+                            score_message = f"📊 <b>امتیاز تطابق:</b> {int(score * 100)}%\n\n{explanation}"
+                            await update.message.reply_text(score_message, parse_mode="HTML")
+                            sent += 1
+                    except Exception as e2:
+                        log.warning(f"Also failed to send text fallback: {e2}")
             else:
                 print(f"post {p.channel_msg_id} did not match user preferences with score of {score}")
 
-    if not matches:
-        await update.message.reply_text("هیچ موقعیت شغلی مطابقی در پست‌های اخیر یافت نشد.")
-        return
-
-    sent = 0
-    for p, score, explanation in sorted(matches, key=lambda x: x[1], reverse=True)[:10]:
-        try:
-            if p.channel_chat_id:
-                # Forward the post
-                await ctx.bot.forward_message(
-                    chat_id=update.effective_chat.id,
-                    from_chat_id=p.channel_chat_id,
-                    message_id=p.channel_msg_id,
-                )
-                sent += 1
-                
-                # Send score and explanation
-                score_message = f"📊 <b>امتیاز تطابق:</b> {int(score * 100)}%\n\n{explanation}"
-                await ctx.bot.send_message(
-                    chat_id=update.effective_chat.id,
-                    text=score_message,
-                    parse_mode="HTML"
-                )
-                
-                # Admin notification about delivery
-                user = update.effective_user
-                username = f"@{user.username}" if user.username else f"user_id {user.id}"
-                link = await _build_telegram_post_link(ctx, p.channel_chat_id, p.channel_msg_id)
-                note = (
-                    f"📨 پست شغلی به {username} ارسال شد (جستجوی دستی)\n"
-                    + f"📊 امتیاز: {int(score * 100)}%\n"
-                    + (f"🔗 لینک: {link}" if link else f"🆔 شناسه: #{p.channel_msg_id}")
-                )
-                await _notify_admins(ctx, note)
-            else:
-                # Fallback to sending raw text if we can't forward
-                text = (p.text or "") or (p.caption or "")
-                if text:
-                    await update.message.reply_text(text[:4000])
-                    # Send score and explanation
-                    score_message = f"📊 <b>امتیاز تطابق:</b> {int(score * 100)}%\n\n{explanation}"
-                    await update.message.reply_text(score_message, parse_mode="HTML")
-                    sent += 1
-                    user = update.effective_user
-                    username = f"@{user.username}" if user.username else f"user_id {user.id}"
-                    link = await _build_telegram_post_link(ctx, p.channel_chat_id, p.channel_msg_id)
-                    note = (
-                        f"📨 متن پست شغلی به {username} ارسال شد (جستجوی دستی)\n"
-                        + f"📊 امتیاز: {int(score * 100)}%\n"
-                        + (f"🔗 لینک: {link}" if link else f"🆔 شناسه: #{p.channel_msg_id}")
-                    )
-                    await _notify_admins(ctx, note)
-        except Exception as e:
-            log.warning(f"Failed to forward message {p.channel_msg_id}: {e}")
-            try:
-                text = (p.text or "") or (p.caption or "")
-                if text:
-                    await update.message.reply_text(text[:4000])
-                    score_message = f"📊 <b>امتیاز تطابق:</b> {int(score * 100)}%\n\n{explanation}"
-                    await update.message.reply_text(score_message, parse_mode="HTML")
-                    sent += 1
-            except Exception as e2:
-                log.warning(f"Also failed to send text fallback: {e2}")
-
-    await update.message.reply_text(f"{sent} پست مطابق مهارت شما فوروارد شد.")
+        # Send summary message
+        if sent == 0:
+            await update.message.reply_text(f"❌ از {total_posts} پست بررسی شده، هیچ موقعیت شغلی مطابق یافت نشد.")
+        else:
+            await update.message.reply_text(f"✅ از {total_posts} پست بررسی شده، {sent} پست مطابق مهارت شما فوروارد شد.")
 
 
 async def _notify_matched_users_for_post(ctx: ContextTypes.DEFAULT_TYPE, post: ChannelPost):
@@ -981,7 +1016,7 @@ async def _notify_matched_users_for_post(ctx: ContextTypes.DEFAULT_TYPE, post: C
 
         for preferred, user in pairs:
             # Use the new embedding-based matching logic
-            is_match, score, explanation = _is_position_match_with_embedding(preferred, post, db)
+            is_match, score, explanation = await _is_position_match_with_embedding(preferred, post, db)
             
             if not is_match:
                 continue
@@ -1038,7 +1073,6 @@ async def _notify_matched_users_for_post(ctx: ContextTypes.DEFAULT_TYPE, post: C
                     db.commit()
             except Exception as e:
                 log.warning(f"Failed to notify user {user.user_id} for post {post.channel_msg_id}: {e}")
-
 
 async def on_channel_post(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Handle new posts published in channels where the bot is an admin."""
@@ -1137,7 +1171,6 @@ async def on_channel_post(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _notify_matched_users_for_post(ctx, post)
     except Exception as e:
         log.warning(f"Failed notifying users for post {post.channel_msg_id}: {e}")
-
 
 async def activate_new_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id

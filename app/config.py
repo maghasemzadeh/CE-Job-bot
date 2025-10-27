@@ -33,6 +33,8 @@ class Settings:
     OPENAI_API_KEY: str = import_config("OPENAI_API_KEY", default="", class_type=str)
     LLM_BASE_URL: str = import_config("LLM_BASE_URL", default="https://api.metisai.ir/openai/v1", class_type=str)
     LLM_MODEL_NAME: str = import_config("LLM_MODEL_NAME", default="gpt-4o-mini", class_type=str)
-
+    LANGFUSE_PUBLIC_KEY: str = import_config("LANGFUSE_PUBLIC_KEY", default="", class_type=str)
+    LANGFUSE_SECRET_KEY: str = import_config("LANGFUSE_SECRET_KEY", default="", class_type=str)
+    LANGFUSE_HOST: str = import_config("LANGFUSE_HOST", default="https://api.langfuse.com", class_type=str)
 
 settings = Settings()
