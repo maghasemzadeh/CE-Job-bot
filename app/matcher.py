@@ -1,6 +1,5 @@
 from typing import List, Tuple
 import re
-from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from sklearn.metrics.pairwise import cosine_similarity
@@ -46,7 +45,7 @@ class KeywordExtractor:
                 "{job_description}"
             ),
         )
-        self.chain = LLMChain(llm=self.llm, prompt=self.prompt)
+        # self.chain = LLMChain(llm=self.llm, prompt=self.prompt)
 
     def _test_api_connectivity(self):
         """Test API connectivity before making actual requests"""
