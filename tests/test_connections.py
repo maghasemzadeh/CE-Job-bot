@@ -32,7 +32,7 @@ def test_imports():
         from app.config import settings
         from app.db import SessionLocal, test_connection
         from app.classification import JobClassifier
-        from app.matcher import PreferenceMatcher, KeywordExtractor
+        from app.matcher import KeywordExtractor
         log.info("✅ All imports successful")
         return True
     except Exception as e:
@@ -166,30 +166,6 @@ def test_classification():
         
     except Exception as e:
         log.error(f"❌ Classification test failed: {e}")
-        return False
-
-def test_embeddings():
-    """Test embedding functionality"""
-    log.info("Testing embedding functionality...")
-    try:
-        from app.matcher import PreferenceMatcher
-        
-        matcher = PreferenceMatcher("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", 0.62)
-        
-        # Test with sample data
-        test_posts = ["Python developer needed", "React frontend developer", "DevOps engineer"]
-        test_ids = [1, 2, 3]
-        
-        matcher.rebuild_index(test_posts, test_ids)
-        
-        # Test search
-        results = matcher.search_users_by_embedding("Python developer")
-        
-        log.info(f"✅ Embedding test successful: {len(results)} matches found")
-        return True
-        
-    except Exception as e:
-        log.error(f"❌ Embedding test failed: {e}")
         return False
 
 def test_keyword_extraction():

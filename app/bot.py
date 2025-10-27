@@ -13,7 +13,7 @@ import requests
 
 log = logging.getLogger(__name__)
 
-from app.matcher import PreferenceMatcher, match_resume_with_job_embedding
+from app.matcher import match_resume_with_job_embedding
 from app.db import SessionLocal
 from app.models import User, Preference, Delivery, ChannelPost, PreferredJobPosition
 from app.config import settings
@@ -22,7 +22,6 @@ from app.classification import job_classifier
 from app.langfuse_client import LangfuseSingleton
 log.info("Using OpenAI-based job classifier")
 
-matcher = PreferenceMatcher(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", threshold=0.62)
 langfuse_client = LangfuseSingleton()
 
 from telegram.constants import ChatType
